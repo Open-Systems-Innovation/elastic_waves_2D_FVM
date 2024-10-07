@@ -110,7 +110,7 @@ struct _n_User {
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
    Boundary Conditions
    - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
-PetscErrorCode ZeroBoundaryCondition(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt Nc, PetscScalar *u, void *ctx)
+PetscErrorCode ZeroBoundaryCondition(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt Nc, PetscScalar *u)
 {
   /* dim - the spatial dimension
      time - current time
@@ -119,15 +119,13 @@ PetscErrorCode ZeroBoundaryCondition(PetscInt dim, PetscReal time, const PetscRe
      u[] - each field evaluated at the current point
      ctx - extra user context
    */
-  const PetscInt Ncomp = dim;
-  PetscInt       comp;  // iterates over components of the field
-
-  for (comp = 0; comp < Ncomp; ++comp) {
-    u[comp] = 0;
+  PetscInt c;
+  for (c = 0; c < Nc; ++c) {
+    u[c] = 0.0;
   }
-
   return PETSC_SUCCESS;
 }
+
 
 static PetscErrorCode SetUpBC(DM dm, PetscDS ds, Physics phys)
 {
@@ -156,8 +154,9 @@ static PetscErrorCode SetUpBC(DM dm, PetscDS ds, Physics phys)
   PetscDSAddBoundary(ds, DM_BC_ESSENTIAL, "Top Boundary", label, 1, top_values,
                             field, 0, NULL, (void (*)(void))ZeroBoundaryCondition, NULL, NULL, NULL);
 
-  DMViewFromOptions(dm, NULL, "-after_ds");
+  PetscCall(DMViewFromOptions(dm, NULL, "-after_ds"));
   PetscDSViewFromOptions(ds, NULL, "-ds_view");
+  PetscCall(DMLabelView(label, PETSC_VIEWER_STDOUT_WORLD));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -401,6 +400,15 @@ int main(int argc, char **argv) {
   // create label for boundary conditions
   PetscCall(DMCreateLabel(dm, "Face Sets"));
 
+  {
+    DM gdm;
+
+    PetscCall(DMPlexConstructGhostCells(dm, NULL, NULL, &gdm));
+    PetscCall(DMDestroy(&dm));
+    dm = gdm;
+    PetscCall(DMViewFromOptions(dm, NULL, "-dm_view"));
+  }
+
   // Create finite volume
   PetscCall(PetscFVCreate(comm, &fv));
   PetscCall(PetscFVSetFromOptions(fv));
@@ -443,6 +451,7 @@ int main(int argc, char **argv) {
   
   PetscCall(DMPlexGetGeometryFVM(dm, NULL, NULL, &minRadius));
   PetscCall(DMViewFromOptions(dm, NULL, "-dm_view"));
+
   PetscCall(DMDestroy(&dm));
   //PetscCall(MPIU_Allreduce(&phys->maxspeed, &mod->maxspeed, 1, MPIU_REAL, MPIU_MAX, PetscObjectComm((PetscObject)ts)));
   
@@ -451,9 +460,12 @@ int main(int argc, char **argv) {
   PetscCall(TSSetTimeStep(ts, dt));
   PetscCall(TSSetFromOptions(ts));
 
+
   PetscCall(TSSetSolution(ts, X));
+  PetscCall(VecViewFromOptions(X, NULL, "-X_view"));
   PetscCall(VecDestroy(&X));
   PetscCall(TSViewFromOptions(ts, NULL, "-ts_view"));
+  PetscCall(PetscDSViewFromOptions(ds, NULL, "-ds_view"));
   PetscCall(TSSolve(ts, NULL));
 
   PetscCall(TSGetSolveTime(ts, &ftime));
