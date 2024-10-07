@@ -73,7 +73,7 @@
 -infile mesh.msh # <now  : formerly >: The input mesh file ()
 # -outfile # <now  : formerly >: The output mesh file ()
 #-fv_view
-#-ts_view
+-ts_view
 #-dm_view
 #-ds_view
 #-X_view#
