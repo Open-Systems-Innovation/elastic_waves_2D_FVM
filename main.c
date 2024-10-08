@@ -80,13 +80,26 @@ static void Elastic_Riemann_Godunov(
     const PetscScalar *uL, const PetscScalar *uR, PetscInt numConstants,
     const PetscScalar constants[], PetscScalar *flux, void *ctx)
 {
+  /* Input Parameters:
+       dim          - The spatial dimension
+       Nf           - The number of fields
+       x            - The coordinates at a point on the interface
+       n            - The normal vector to the interface
+       uL           - The state vector to the left of the interface
+       uR           - The state vector to the right of the interface
+       numConstants - number of constant parameters
+       constants    - constant parameters
+       ctx          - optional user context
+       flux         - output array of flux through the interface
+  */
+
   ElasticityContext *material = (ElasticityContext*) ctx; // Cast user context
 
-    PetscReal rho = material->rho;
-    PetscReal lambda = material->lambda;
-    PetscReal mu = material->mu;
-    PetscReal cp = material->cp;
-    PetscReal cs = material->cs;
+  PetscReal rho = 1000; // value of water
+    PetscReal lambda = 100000;
+    PetscReal mu = 500000;
+    PetscReal cp = .01;
+    PetscReal cs = 0.005;
 
     PetscReal dsig11, dsig22, dsig12, du, dv;
     PetscReal a1, a2, a3, a4;
@@ -191,6 +204,7 @@ struct _n_User {
   char     outfile[PETSC_MAX_PATH_LEN]; /* Dump/reload mesh filename */
   Model     model;
   PetscInt  monitorStepOffset;
+  char      outputBasename[PETSC_MAX_PATH_LEN]; /* Basename for output files */
   PetscInt  vtkInterval;                        /* For monitor */
   PetscBool vtkmon;
 };
@@ -198,7 +212,7 @@ struct _n_User {
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
    Boundary Conditions
    - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
-PetscErrorCode ZeroBoundaryCondition(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt Nc, PetscScalar *u)
+PetscErrorCode ZeroBoundaryCondition(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt Nc, PetscScalar *u, void *ctx)
 {
   /* dim - the spatial dimension
      time - current time
@@ -207,13 +221,15 @@ PetscErrorCode ZeroBoundaryCondition(PetscInt dim, PetscReal time, const PetscRe
      u[] - each field evaluated at the current point
      ctx - extra user context
    */
-  PetscInt c;
-  for (c = 0; c < Nc; ++c) {
-    u[c] = 0.0;
-  }
+  PetscPrintf(PETSC_COMM_WORLD, "dim = %d, Nc = %d, time = %f, x = (%f, %f)\n", dim, Nc, time, x[0], x[1]);
+  u[0] = 0.0;
+  u[1] = 0.0;
+  u[2] = 0.0;
+  u[3] = 0.0;
+  u[4] = 0.0;
+
   return PETSC_SUCCESS;
 }
-
 
 static PetscErrorCode SetUpBC(DM dm, PetscDS ds, Physics phys)
 {
@@ -221,30 +237,40 @@ static PetscErrorCode SetUpBC(DM dm, PetscDS ds, Physics phys)
   PetscInt       field = 0;   // we're working with a single field
   
   PetscFunctionBeginUser;
-  PetscCall(DMGetLabel(dm, "Face Sets", &label));
-  // Add Dirichlet boundary condition (Essential) on Left (Label = 4)
-  PetscInt left_values[] = {4};  // Physical group label for "Left"
-  PetscDSAddBoundary(ds, DM_BC_ESSENTIAL, "Left Boundary", label, 1, left_values,
-                     field, 0, NULL, (void (*)(void))ZeroBoundaryCondition, NULL, NULL, NULL);
+  /* Add Dirichlet boundary conditions
+     PetscDSAddBoundary:
+     
+     Input Parameters:
+       ds       - The PetscDS object
+       type     - The type of condition, e.g. `DM_BC_ESSENTIAL`/`DM_BC_ESSENTIAL_FIELD` (Dirichlet), or `DM_BC_NATURAL` (Neumann)
+       name     - The BC name
+       label    - The label defining constrained points
+       Nv       - The number of `DMLabel` values for constrained points
+       values   - An array of label values for constrained points
+       field    - The field to constrain
+       Nc       - The number of constrained field components (0 will constrain all fields)
+       comps    - An array of constrained component numbers
+       bcFunc   - A pointwise function giving boundary values
+       bcFunc_t - A pointwise function giving the time derivative of the boundary values, or NULL
+       ctx      - An optional user context for bcFunc
+    
+     Output Parameter:
+       bd - The boundary number
+    
+     Options Database Keys:
+       -bc_<boundary name> <num>      - Overrides the boundary ids
+       -bc_<boundary name>_comp <num> - Overrides the boundary components
+  */
 
-  // Add Dirichlet boundary condition (Essential) on Right (Label = 2)
-  PetscInt right_values[] = {2};  // Physical group label for "Right"
-  PetscDSAddBoundary(ds, DM_BC_ESSENTIAL, "Right Boundary", label, 1, right_values,
-                            field, 0, NULL, (void (*)(void))ZeroBoundaryCondition, NULL, NULL, NULL);
+  PetscInt boundaryids[] = {4};  // Physical group label for "Left"
 
-  // Add Dirichlet boundary condition (Essential) on Bottom (Label = 1)
-  PetscInt bottom_values[] = {1};  // Physical group label for "Bottom"
-  PetscDSAddBoundary(ds, DM_BC_ESSENTIAL, "Bottom Boundary", label, 1, bottom_values,
-                            field, 0, NULL, (void (*)(void))ZeroBoundaryCondition, NULL, NULL, NULL);
-
-  // Add Dirichlet boundary condition (Essential) on Top (Label = 3)
-  PetscInt top_values[] = {3};  // Physical group label for "Top"
-  PetscDSAddBoundary(ds, DM_BC_ESSENTIAL, "Top Boundary", label, 1, top_values,
-                            field, 0, NULL, (void (*)(void))ZeroBoundaryCondition, NULL, NULL, NULL);
-
+  PetscCall(DMGetLabel(dm, "boundary", &label));
+  PetscDSAddBoundary(ds, DM_BC_ESSENTIAL, "boundary", label, 1, boundaryids,
+                     field, 0, NULL, (void (*)(void))ZeroBoundaryCondition,
+                     NULL, NULL, NULL);
   PetscCall(DMViewFromOptions(dm, NULL, "-after_ds"));
   PetscDSViewFromOptions(ds, NULL, "-ds_view");
-  PetscCall(DMLabelView(label, PETSC_VIEWER_STDOUT_WORLD));
+  //PetscCall(DMLabelView(label, PETSC_VIEWER_STDOUT_WORLD));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -262,7 +288,26 @@ PetscErrorCode zero_vector(PetscInt dim, PetscReal time, const PetscReal x[], Pe
     ctx - optional user-defined function context
    */
   PetscInt d;
-  for (d = 0; d < dim; ++d) u[d] = 0.0;
+  for (d = 0; d < dim; ++d) {
+    u[d] = 0.0;
+  }
+  
+ // if (PetscAbsReal(x[0]) < 0.5 && PetscAbsReal(x[1]) < 0.5) {
+ //   u[0] = 1;  // Apply source to the first field (modify as needed for other fields)
+ // }
+
+
+  // Define a small area in the center (e.g., radius r = 0.1 around the point (0.5, 0.5))
+  PetscReal radius = 0.1;
+  PetscReal center_x = 0.5;
+  PetscReal center_y = 0.5;
+  PetscReal distance_from_center = PetscSqrtReal((x[0] - center_x)*(x[0] - center_x) + (x[1] - center_y)*(x[1] - center_y));
+
+  // Check if the point is within the small area around the center (0.5, 0.5)
+  if (distance_from_center < radius) {
+    u[0] = 1.0;  // Set u[0] to 1 in the central region
+  }
+  
   return 0;
 }
 
@@ -292,115 +337,81 @@ static PetscErrorCode MonitorVTK(TS ts, PetscInt stepnum, PetscReal time, Vec X,
   User        user = (User)ctx;
   DM          dm, plex;
   PetscViewer viewer;
-  char        filename[PETSC_MAX_PATH_LEN], *ftable = NULL;
+  char        filename[PETSC_MAX_PATH_LEN];
   PetscReal   xnorm;
   PetscBool   rollback;
 
   PetscFunctionBeginUser;
+  // Check for rollback
   PetscCall(TSGetStepRollBack(ts, &rollback));
-  if (rollback) PetscFunctionReturn(PETSC_SUCCESS);
+  if (rollback)
+    PetscFunctionReturn(PETSC_SUCCESS);
+
+  // Get the current solution
   PetscCall(PetscObjectSetName((PetscObject)X, "u"));
+  // Get the DM associated with the solution vector X
   PetscCall(VecGetDM(X, &dm));
+  // Find the norm of the solution vector for summary printing
   PetscCall(VecNorm(X, NORM_INFINITY, &xnorm));
 
+  // Adjust step iteration number by user offset
   if (stepnum >= 0) stepnum += user->monitorStepOffset;
-  if (stepnum >= 0) { /* No summary for final time */
-    Model              mod = user->model;
+
+  // Process and print results (omit if stepnum = -1, i.e., final time)
+  if (stepnum >= 0) {
     Vec                cellgeom;
-    PetscInt           c, cStart, cEnd, fcount, i;
-    size_t             ftableused, ftablealloc;
+    PetscInt           c, cStart, cEnd;
     const PetscScalar *cgeom, *x;
     DM                 dmCell;
-    DMLabel            vtkLabel;
-    PetscReal         *fmin, *fmax, *fintegral, *ftmp;
 
+    // Ensure the DM is DMPlex
     PetscCall(DMConvert(dm, DMPLEX, &plex));
+    // Get the FV mesh geometry (optional, depending on your needs)
     PetscCall(DMPlexGetGeometryFVM(plex, NULL, &cellgeom, NULL));
-    fcount = mod->maxComputed + 1;
-    PetscCall(PetscMalloc4(fcount, &fmin, fcount, &fmax, fcount, &fintegral, fcount, &ftmp));
-    for (i = 0; i < fcount; i++) {
-      fmin[i]      = PETSC_MAX_REAL;
-      fmax[i]      = PETSC_MIN_REAL;
-      fintegral[i] = 0;
-    }
-    PetscCall(VecGetDM(cellgeom, &dmCell));
-    PetscCall(DMPlexGetSimplexOrBoxCells(dmCell, 0, &cStart, &cEnd));
-    PetscCall(VecGetArrayRead(cellgeom, &cgeom));
-    PetscCall(VecGetArrayRead(X, &x));
-    PetscCall(DMGetLabel(dm, "vtk", &vtkLabel));
-    for (c = cStart; c < cEnd; ++c) {
-      PetscFVCellGeom   *cg;
-      const PetscScalar *cx     = NULL;
-      PetscInt           vtkVal = 0;
 
-      /* not that these two routines as currently implemented work for any dm with a
-       * localSection/globalSection */
-      PetscCall(DMPlexPointLocalRead(dmCell, c, cgeom, &cg));
+    // Get the DM associated with the FV cell geometry (optional)
+    PetscCall(VecGetDM(cellgeom, &dmCell));
+    // Get the range of cells in the mesh
+    PetscCall(DMPlexGetSimplexOrBoxCells(dmCell, 0, &cStart, &cEnd));
+
+    // Read the arrays (geometry of cells and solution)
+    PetscCall(VecGetArrayRead(cellgeom, &cgeom));  // optional
+    PetscCall(VecGetArrayRead(X, &x));
+
+    // Loop over all cells and directly output field values to VTK
+    for (c = cStart; c < cEnd; ++c) {
+      const PetscScalar *cx = NULL;
+
+      // Read the solution at the current cell
       PetscCall(DMPlexPointGlobalRead(dm, c, x, &cx));
-      if (vtkLabel) PetscCall(DMLabelGetValue(vtkLabel, c, &vtkVal));
-      if (!vtkVal || !cx) continue; /* ghost, or not a global cell */
-      for (i = 0; i < mod->numCall; i++) {
-      }
-      for (i = 0; i < fcount; i++) {
-        fmin[i] = PetscMin(fmin[i], ftmp[i]);
-        fmax[i] = PetscMax(fmax[i], ftmp[i]);
-        fintegral[i] += cg->volume * ftmp[i];
-      }
+
+      if (!cx) continue;  // Skip ghost or non-global cells
+
+      // Here, you can process cx directly to output its components at the cell
+      // In this case, simply write the components of `cx` to VTK
+      // You can expand this part with code that writes to the VTK file
     }
-    PetscCall(VecRestoreArrayRead(cellgeom, &cgeom));
+
+    // Restore the arrays
+    PetscCall(VecRestoreArrayRead(cellgeom, &cgeom));  // optional
     PetscCall(VecRestoreArrayRead(X, &x));
     PetscCall(DMDestroy(&plex));
-    PetscCall(MPIU_Allreduce(MPI_IN_PLACE, fmin, fcount, MPIU_REAL, MPIU_MIN, PetscObjectComm((PetscObject)ts)));
-    PetscCall(MPIU_Allreduce(MPI_IN_PLACE, fmax, fcount, MPIU_REAL, MPIU_MAX, PetscObjectComm((PetscObject)ts)));
-    PetscCall(MPIU_Allreduce(MPI_IN_PLACE, fintegral, fcount, MPIU_REAL, MPIU_SUM, PetscObjectComm((PetscObject)ts)));
-
-    ftablealloc = fcount * 100;
-    ftableused  = 0;
-    PetscCall(PetscMalloc1(ftablealloc, &ftable));
-    for (i = 0; i < mod->numMonitored; i++) {
-      size_t         countused;
-      char           buffer[256], *p;
-      if (i % 3) {
-        PetscCall(PetscArraycpy(buffer, "  ", 2));
-        p = buffer + 2;
-      } else if (i) {
-        char newline[] = "\n";
-        PetscCall(PetscMemcpy(buffer, newline, sizeof(newline) - 1));
-        p = buffer + sizeof(newline) - 1;
-      } else {
-        p = buffer;
-      }
-      countused--;
-      countused += p - buffer;
-      if (countused > ftablealloc - ftableused - 1) { /* reallocate */
-        char *ftablenew;
-        ftablealloc = 2 * ftablealloc + countused;
-        PetscCall(PetscMalloc(ftablealloc, &ftablenew));
-        PetscCall(PetscArraycpy(ftablenew, ftable, ftableused));
-        PetscCall(PetscFree(ftable));
-        ftable = ftablenew;
-      }
-      PetscCall(PetscArraycpy(ftable + ftableused, buffer, countused));
-      ftableused += countused;
-      ftable[ftableused] = 0;
-    }
-    PetscCall(PetscFree4(fmin, fmax, fintegral, ftmp));
-
-    PetscCall(PetscPrintf(PetscObjectComm((PetscObject)ts), "% 3" PetscInt_FMT "  time %8.4g  |x| %8.4g  %s\n", stepnum, (double)time, (double)xnorm, ftable ? ftable : ""));
-    PetscCall(PetscFree(ftable));
   }
+
+  // Output to VTK at regular intervals or at the final time
   if (user->vtkInterval < 1) PetscFunctionReturn(PETSC_SUCCESS);
   if ((stepnum == -1) ^ (stepnum % user->vtkInterval == 0)) {
-    if (stepnum == -1) { /* Final time is not multiple of normal time interval, write it anyway */
-      PetscCall(TSGetStepNumber(ts, &stepnum));
+    if (stepnum == -1) {
+      PetscCall(TSGetStepNumber(ts, &stepnum));  // Adjust for final time
     }
+    PetscCall(PetscSNPrintf(filename, sizeof(filename), "%s-%03" PetscInt_FMT ".vtu", user->outputBasename, stepnum));
     PetscCall(OutputVTK(dm, filename, &viewer));
     PetscCall(VecView(X, viewer));
     PetscCall(PetscViewerDestroy(&viewer));
   }
+
   PetscFunctionReturn(PETSC_SUCCESS);
 }
-
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
    Initialize Time stepping (TS) object
    - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
@@ -411,6 +422,7 @@ static PetscErrorCode InitializeTS(DM dm, User user, TS *ts)
   PetscCall(TSSetType(*ts, TSSSP)); // use Runge-Kutta, -ts_ssp_type {rks2,rks3,rk104}
   PetscCall(TSSetDM(*ts, dm));
   if (user->vtkmon) PetscCall(TSMonitorSet(*ts, MonitorVTK, user, NULL));
+  //PetscCall(TSMonitorSet(*ts, MonitorVTK, user, NULL));
   PetscCall(DMTSSetBoundaryLocal(dm, DMPlexTSComputeBoundary, user));
   PetscCall(DMTSSetRHSFunctionLocal(dm, DMPlexTSComputeRHSFunctionFVM, user));
   PetscCall(TSSetMaxTime(*ts, 2.0));
@@ -462,6 +474,7 @@ int main(int argc, char **argv) {
   TS                ts;
   TSConvergedReason reason;
   Vec               X;
+  PetscViewer       viewer;
 
   // Initialize PETSc code
   PetscFunctionBeginUser;
@@ -475,27 +488,36 @@ int main(int argc, char **argv) {
   mod           = user->model;
   phys          = mod->physics;
   mod->comm     = comm;
+  user->vtkmon = PETSC_TRUE;
+  user->vtkInterval = 1;
+  PetscStrcpy(user->outputBasename, "paraview");
 
   // Process user options
   PetscCall(ProcessOptions(comm, user));
   
   // Read in 3D mesh from file
   //PetscCall(DMPlexCreateFromFile(comm, user->infile, NULL, PETSC_TRUE,&dm));
-  PetscCall(DMPlexCreateGmshFromFile(comm, user->infile, PETSC_TRUE, &dm));
+  //PetscCall(DMPlexCreateGmshFromFile(comm, user->infile, PETSC_TRUE, &dm));
+//  PetscViewerBinaryOpen(comm, "mesh.msh", FILE_MODE_READ, &viewer);
+  PetscCall(PetscViewerCreate(comm,&viewer));
+  PetscCall(PetscViewerSetType(viewer,PETSCVIEWERASCII));
+  PetscCall(PetscViewerFileSetMode(viewer,FILE_MODE_READ));
+  PetscCall(PetscViewerFileSetName(viewer,"mesh.msh"));
+  DMPlexCreateGmsh(comm, viewer, PETSC_TRUE, &dm);
   PetscCall(DMSetFromOptions(dm));
   PetscCall(DMViewFromOptions(dm, NULL, "-orig_dm_view"));
   PetscCall(DMGetDimension(dm, &dim));
   // create label for boundary conditions
   PetscCall(DMCreateLabel(dm, "Face Sets"));
 
-  //{
-  //  DM gdm;
+  {
+    DM gdm;
 
-  //  PetscCall(DMPlexConstructGhostCells(dm, NULL, NULL, &gdm));
-  //  PetscCall(DMDestroy(&dm));
-  //  dm = gdm;
-  //  PetscCall(DMViewFromOptions(dm, NULL, "-dm_view"));
-  //}
+    PetscCall(DMPlexConstructGhostCells(dm, NULL, NULL, &gdm));
+    PetscCall(DMDestroy(&dm));
+    dm = gdm;
+    PetscCall(DMViewFromOptions(dm, NULL, "-dm_view"));
+  }
 
   // Create finite volume
   PetscCall(PetscFVCreate(comm, &fv));
@@ -526,6 +548,7 @@ int main(int argc, char **argv) {
   // set the pointwise functions. The actual equations to be enforced
   // on each region
   PetscCall(PetscDSSetRiemannSolver(ds, 0, Elastic_Riemann_Godunov));
+  //  PetscCall(PetscDSSetContext(ds, 0, user->model->physics));
   PetscCall(SetUpBC(dm, ds, phys));
   PetscCall(PetscDSSetFromOptions(ds));
 

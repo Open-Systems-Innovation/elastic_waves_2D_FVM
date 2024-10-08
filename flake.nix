@@ -25,17 +25,17 @@
                pkgs.hdf5
               # pkgs.clangd
               #  # Python packages
-              #(pkgs.python3.withPackages (python-pkgs: [
+              (pkgs.python3.withPackages (python-pkgs: [
               #  # packages for formatting/ IDE
               #  python-pkgs.pip
               #  python-pkgs.python-lsp-server
               #  # packages for code
-              #  python-pkgs.gmsh
+                python-pkgs.gmsh
               #  python-pkgs.matplotlib
               #  python-pkgs.meshio
               #  python-pkgs.numpy
               #  python-pkgs.firedrake
-              #]))
+              ]))
             ];
 
             PETSC_DIR = "${pkgs.petsc}";

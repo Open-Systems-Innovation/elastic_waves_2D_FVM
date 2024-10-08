@@ -73,7 +73,10 @@
 -infile mesh.msh # <now  : formerly >: The input mesh file ()
 # -outfile # <now  : formerly >: The output mesh file ()
 #-fv_view
--ts_view
+#-ts_view
 #-dm_view
 #-ds_view
 #-X_view#
+#-dm_view :mesh.tex:ascii_latex
+-dm_plex_gmsh_use_regions
+-orig_dm_view
