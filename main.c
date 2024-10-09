@@ -97,9 +97,9 @@ static void Elastic_Riemann_Godunov(
 
   PetscReal rho = 1000; // value of water
     PetscReal lambda = 100000;
-    PetscReal mu = 500000;
-    PetscReal cp = .01;
-    PetscReal cs = 0.005;
+    PetscReal mu = 50000;
+    PetscReal cp = .02;
+    PetscReal cs = 0.010;
 
     PetscReal dsig11, dsig22, dsig12, du, dv;
     PetscReal a1, a2, a3, a4;
@@ -262,12 +262,12 @@ static PetscErrorCode SetUpBC(DM dm, PetscDS ds, Physics phys)
        -bc_<boundary name>_comp <num> - Overrides the boundary components
   */
 
-  PetscInt boundaryids[] = {4};  // Physical group label for "Left"
+  PetscInt boundaryid = 1;  // Physical group label for "boundary"
 
   PetscCall(DMGetLabel(dm, "boundary", &label));
-  PetscDSAddBoundary(ds, DM_BC_ESSENTIAL, "boundary", label, 1, boundaryids,
-                     field, 0, NULL, (void (*)(void))ZeroBoundaryCondition,
-                     NULL, NULL, NULL);
+  PetscCall(PetscDSAddBoundary(
+      ds, DM_BC_ESSENTIAL, "boundary", label, 1, &boundaryid, field, 0, NULL,
+			       (void (*)(void))ZeroBoundaryCondition, NULL, NULL, NULL));
   PetscCall(DMViewFromOptions(dm, NULL, "-after_ds"));
   PetscDSViewFromOptions(ds, NULL, "-ds_view");
   //PetscCall(DMLabelView(label, PETSC_VIEWER_STDOUT_WORLD));
@@ -288,15 +288,10 @@ PetscErrorCode zero_vector(PetscInt dim, PetscReal time, const PetscReal x[], Pe
     ctx - optional user-defined function context
    */
   PetscInt d;
-  for (d = 0; d < dim; ++d) {
+  for (d = 0; d < Nc; ++d) {
     u[d] = 0.0;
   }
   
- // if (PetscAbsReal(x[0]) < 0.5 && PetscAbsReal(x[1]) < 0.5) {
- //   u[0] = 1;  // Apply source to the first field (modify as needed for other fields)
- // }
-
-
   // Define a small area in the center (e.g., radius r = 0.1 around the point (0.5, 0.5))
   PetscReal radius = 0.1;
   PetscReal center_x = 0.5;
@@ -305,7 +300,11 @@ PetscErrorCode zero_vector(PetscInt dim, PetscReal time, const PetscReal x[], Pe
 
   // Check if the point is within the small area around the center (0.5, 0.5)
   if (distance_from_center < radius) {
-    u[0] = 1.0;  // Set u[0] to 1 in the central region
+    u[0] = 1000.0;  // Set u[0] to 1 in the central region
+    u[1] = 1000.0;  // Set u[0] to 1 in the central region
+    u[2] = 1000.0;  // Set u[0] to 1 in the central region
+    u[3] = 1000.0;  // Set u[0] to 1 in the central region
+    u[4] = 1000.0;  // Set u[0] to 1 in the central region
   }
   
   return 0;
@@ -387,9 +386,7 @@ static PetscErrorCode MonitorVTK(TS ts, PetscInt stepnum, PetscReal time, Vec X,
 
       if (!cx) continue;  // Skip ghost or non-global cells
 
-      // Here, you can process cx directly to output its components at the cell
-      // In this case, simply write the components of `cx` to VTK
-      // You can expand this part with code that writes to the VTK file
+      // TODO: process cx directly and output its components at the cell
     }
 
     // Restore the arrays
