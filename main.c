@@ -66,6 +66,7 @@ F*/
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
    Include statements 
    - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
 #include <petscdmplex.h>
 #include <petscds.h>
 #include <petscts.h>
@@ -96,84 +97,89 @@ static void Elastic_Riemann_Godunov(
   ElasticityContext *material = (ElasticityContext*) ctx; // Cast user context
 
   PetscReal rho = 1000; // value of water
-    PetscReal lambda = 100000;
-    PetscReal mu = 50000;
-    PetscReal cp = .02;
-    PetscReal cs = 0.010;
+  PetscReal lambda = 10000;
+  PetscReal mu = 100;
 
-    PetscReal dsig11, dsig22, dsig12, du, dv;
-    PetscReal a1, a2, a3, a4;
-    PetscReal det, bulkl, bulkr;
+  // Calculate cp (P-wave speed) and cs (S-wave speed)
+  PetscReal cp = PetscSqrtReal((lambda + 2.0 * mu) / rho);
+  PetscReal cs = PetscSqrtReal(mu / rho);
 
-    PetscReal s[4], wave[4][5]; // Assuming 4 waves, 5 components
+  //PetscPrintf(PETSC_COMM_WORLD, "P-wave speed (cp): %f\n", cp);
+  //PetscPrintf(PETSC_COMM_WORLD, "S-wave speed (cs): %f\n", cs);
 
-    // Compute jumps in the states (uL is left, uR is right)
-    dsig11 = uL[0] - uR[0]; // sigma11
-    dsig22 = uL[1] - uR[1]; // sigma22
-    dsig12 = uL[2] - uR[2]; // sigma12
-    du = uL[3] - uR[3];     // u (velocity component)
-    dv = uL[4] - uR[4];     // v (velocity component)
+  PetscReal dsig11, dsig22, dsig12, du, dv;
+  PetscReal a1, a2, a3, a4;
+  PetscReal det, bulkl, bulkr;
 
-    // Bulk moduli for left and right states
-    bulkl = lambda + 2.0 * mu;
-    bulkr = lambda + 2.0 * mu;
+  PetscReal s[4], wave[4][5]; // Assuming 4 waves, 5 components
 
-    // P-wave strengths
-    det = bulkl * cp + bulkr * cp;
-    if (det == 0.0) {
-        PetscPrintf(PETSC_COMM_SELF, "det=0 in RiemannSolver\n");
-    }
-    a1 = (cp * dsig11 + bulkr * du) / det;
-    a2 = (cp * dsig11 - bulkl * du) / det;
+  // Compute jumps in the states (uL is left, uR is right)
+  dsig11 = uL[0] - uR[0]; // sigma11
+  dsig22 = uL[1] - uR[1]; // sigma22
+  dsig12 = uL[2] - uR[2]; // sigma12
+  du = uL[3] - uR[3];     // u (velocity component)
+  dv = uL[4] - uR[4];     // v (velocity component)
 
-    // S-wave strengths
-    det = mu * cs + mu * cs;
-    if (det == 0.0) {
-        // No s-waves
-        a3 = 0.0;
-        a4 = 0.0;
-    } else {
-        a3 = (cs * dsig12 + mu * dv) / det;
-        a4 = (cs * dsig12 - mu * dv) / det;
-    }
+  // Bulk moduli for left and right states
+  bulkl = lambda + 2.0 * mu;
+  bulkr = lambda + 2.0 * mu;
 
-    // Compute the waves
-    // First wave (P-wave, left-going)
-    wave[0][0] = a1 * bulkl;  // sigma11
-    wave[0][1] = a1 * lambda; // sigma22
-    wave[0][2] = 0.0;         // sigma12
-    wave[0][3] = a1 * cp;     // u
-    wave[0][4] = 0.0;         // v
-    s[0] = -cp;
+  // P-wave strengths
+  det = bulkl * cp + bulkr * cp;
+  if (det == 0.0) {
+      PetscPrintf(PETSC_COMM_SELF, "det=0 in RiemannSolver\n");
+  }
+  a1 = (cp * dsig11 + bulkr * du) / det;
+  a2 = (cp * dsig11 - bulkl * du) / det;
 
-    // Second wave (P-wave, right-going)
-    wave[1][0] = a2 * bulkr;
-    wave[1][1] = a2 * lambda;
-    wave[1][2] = 0.0;
-    wave[1][3] = -a2 * cp;
-    wave[1][4] = 0.0;
-    s[1] = cp;
+  // S-wave strengths
+  det = mu * cs + mu * cs;
+  if (det == 0.0) {
+      // No s-waves
+      a3 = 0.0;
+      a4 = 0.0;
+  } else {
+      a3 = (cs * dsig12 + mu * dv) / det;
+      a4 = (cs * dsig12 - mu * dv) / det;
+  }
 
-    // Third wave (S-wave, left-going)
-    wave[2][0] = 0.0;
-    wave[2][1] = 0.0;
-    wave[2][2] = a3 * mu;
-    wave[2][3] = 0.0;
-    wave[2][4] = a3 * cs;
-    s[2] = -cs;
+  // Compute the waves
+  // First wave (P-wave, left-going)
+  wave[0][0] = a1 * bulkl;  // sigma11
+  wave[0][1] = a1 * lambda; // sigma22
+  wave[0][2] = 0.0;         // sigma12
+  wave[0][3] = a1 * cp;     // u
+  wave[0][4] = 0.0;         // v
+  s[0] = -cp;
 
-    // Fourth wave (S-wave, right-going)
-    wave[3][0] = 0.0;
-    wave[3][1] = 0.0;
-    wave[3][2] = a4 * mu;
-    wave[3][3] = 0.0;
-    wave[3][4] = -a4 * cs;
-    s[3] = cs;
+  // Second wave (P-wave, right-going)
+  wave[1][0] = a2 * bulkr;
+  wave[1][1] = a2 * lambda;
+  wave[1][2] = 0.0;
+  wave[1][3] = -a2 * cp;
+  wave[1][4] = 0.0;
+  s[1] = cp;
 
-    // Compute flux differences (amdq, apdq)
-    for (PetscInt m = 0; m < Nf; m++) {
-        flux[m] = s[1] * wave[1][m] + s[3] * wave[3][m] - s[0] * wave[0][m] - s[2] * wave[2][m];
-    }
+  // Third wave (S-wave, left-going)
+  wave[2][0] = 0.0;
+  wave[2][1] = 0.0;
+  wave[2][2] = a3 * mu;
+  wave[2][3] = 0.0;
+  wave[2][4] = a3 * cs;
+  s[2] = -cs;
+
+  // Fourth wave (S-wave, right-going)
+  wave[3][0] = 0.0;
+  wave[3][1] = 0.0;
+  wave[3][2] = a4 * mu;
+  wave[3][3] = 0.0;
+  wave[3][4] = -a4 * cs;
+  s[3] = cs;
+
+  // Compute flux differences (amdq, apdq)
+  for (PetscInt m = 0; m < Nf; m++) {
+      flux[m] = s[1] * wave[1][m] + s[3] * wave[3][m] - s[0] * wave[0][m] - s[2] * wave[2][m];
+  }
 }
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -212,64 +218,95 @@ struct _n_User {
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
    Boundary Conditions
    - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
-PetscErrorCode ZeroBoundaryCondition(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt Nc, PetscScalar *u, void *ctx)
+//PetscErrorCode ZeroBoundaryCondition(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt Nc, PetscScalar *bcval, void *ctx)
+//{
+//  /* dim - the spatial dimension
+//     time - current time
+//     x[] - coordinates of the current point
+//     Nc - number of constant parameters 
+//     u[] - each field evaluated at the current point
+//     ctx - extra user context
+//   */
+//
+//  PetscFunctionBeginUser;
+//  PetscPrintf(PETSC_COMM_WORLD, "dim = %d, Nc = %d, time = %f, x = (%f, %f), bcval=(%f,%f)\n", dim, Nc, time, x[0], x[1], bcval[0], bcval[1]);
+//  bcval[0] = 0.0;
+//  bcval[1] = 0.0;
+//  bcval[2] = 0.0;
+//  bcval[3] = 0.0;
+//  bcval[4] = 0.0;
+//
+// PetscFunctionReturn(PETSC_SUCCESS);
+//}
+
+//static PetscErrorCode ZeroBoundaryCondition(PetscReal time, const PetscReal *c, const PetscReal *n, const PetscScalar *xI, PetscScalar *xG, void *ctx)
+
+//static PetscErrorCode ZeroBoundaryCondition(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt Nf, PetscScalar *u, void *ctx)
+//{
+//
+//  //PetscPrintf(PETSC_COMM_WORLD, "dim = %d, time= %f, x = (%f, %f), Nf = %d,  u = (%f, %f, %f, %f, %f)\n", dim, time, x[0], x[1], Nf, u[0], u[1], u[2], u[3], u[4]);
+//  PetscFunctionBeginUser;
+//  u[0] = 0.0;
+//  u[1] = 0.0;
+//  u[2] = 0.0;
+//  u[3] = 0.0;
+//  u[4] = 0.0;
+//
+//  PetscFunctionReturn(PETSC_SUCCESS);
+//}
+static PetscErrorCode ZeroBoundaryCondition(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt Nf, PetscScalar *u, void *ctx)
 {
-  /* dim - the spatial dimension
-     time - current time
-     x[] - coordinates of the current point
-     Nc - number of constant parameters 
-     u[] - each field evaluated at the current point
-     ctx - extra user context
-   */
-  PetscPrintf(PETSC_COMM_WORLD, "dim = %d, Nc = %d, time = %f, x = (%f, %f)\n", dim, Nc, time, x[0], x[1]);
-  u[0] = 0.0;
+  PetscFunctionBeginUser;
+
+  PetscPrintf(PETSC_COMM_WORLD, "dim = %d, time= %f, x = (%f, %f), Nf = %d, u = (%f, %f, %f, %f, %f)\n", dim, time,  x[0], x[1], Nf, u[0], u[1], u[2], u[3], u[4]);
+  // Check if it's time 0 and if the current point is the target point (e.g., x[0] == 0.5 and x[1] == 0.5)
+  if (time == 0.0 && PetscAbsReal(x[0] - 0.5) < 1e-6 && PetscAbsReal(x[1] - 0.5) < 1e-6) {
+    u[0] = 1.0;  // Set a non-zero value for u[0] at the specific point
+  } else {
+    u[0] = 0.0;
+  }
   u[1] = 0.0;
   u[2] = 0.0;
   u[3] = 0.0;
   u[4] = 0.0;
 
-  return PETSC_SUCCESS;
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
+static PetscErrorCode BoundaryOutflow(PetscReal time, const PetscReal *c, const PetscReal *n, const PetscScalar *xI, PetscScalar *xG, void *ctx)
+{
+  
+  PetscFunctionBeginUser;
+  PetscPrintf(PETSC_COMM_WORLD, "time= %f, c = (%f, %f), n = (%f, %f), xI = (%f, %f, %f, %f, %f),  xG = (%f, %f)\n", time, c[0], c[1], n[0], n[1], xI[0], xI[1], xI[2], xI[3], xI[4], xG[0], xG[1]);
+  xG[0] = xI[0];
+  xG[1] = xI[1];
+  xG[2] = xI[2];
+  xG[3] = xI[3];
+  xG[4] = xI[4];
+  PetscFunctionReturn(PETSC_SUCCESS);
 }
 
 static PetscErrorCode SetUpBC(DM dm, PetscDS ds, Physics phys)
 {
   DMLabel        label;
   PetscInt       field = 0;   // we're working with a single field
+  PetscInt       boundaryid = 1;  // Physical group label for "boundary"
   
   PetscFunctionBeginUser;
-  /* Add Dirichlet boundary conditions
-     PetscDSAddBoundary:
-     
-     Input Parameters:
-       ds       - The PetscDS object
-       type     - The type of condition, e.g. `DM_BC_ESSENTIAL`/`DM_BC_ESSENTIAL_FIELD` (Dirichlet), or `DM_BC_NATURAL` (Neumann)
-       name     - The BC name
-       label    - The label defining constrained points
-       Nv       - The number of `DMLabel` values for constrained points
-       values   - An array of label values for constrained points
-       field    - The field to constrain
-       Nc       - The number of constrained field components (0 will constrain all fields)
-       comps    - An array of constrained component numbers
-       bcFunc   - A pointwise function giving boundary values
-       bcFunc_t - A pointwise function giving the time derivative of the boundary values, or NULL
-       ctx      - An optional user context for bcFunc
-    
-     Output Parameter:
-       bd - The boundary number
-    
-     Options Database Keys:
-       -bc_<boundary name> <num>      - Overrides the boundary ids
-       -bc_<boundary name>_comp <num> - Overrides the boundary components
-  */
-
-  PetscInt boundaryid = 1;  // Physical group label for "boundary"
+  
+  // Add Dirichlet boundary conditions
+  // Check if the label exists
+  PetscCall(DMGetLabel(dm, "Face Sets", &label));
+  // if it doesn't exist, then throw error
+  if (!label) {
+      PetscCall(PetscPrintf(PETSC_COMM_WORLD, "Error: Label 'boundary' not found\n"));
+      PetscFunctionReturn(PETSC_ERR_ARG_WRONG);
+  }
 
   PetscCall(DMGetLabel(dm, "boundary", &label));
-  PetscCall(PetscDSAddBoundary(
-      ds, DM_BC_ESSENTIAL, "boundary", label, 1, &boundaryid, field, 0, NULL,
-			       (void (*)(void))ZeroBoundaryCondition, NULL, NULL, NULL));
+  PetscCall(PetscDSViewFromOptions(ds, NULL, "-ds_view"));
+  PetscCall(PetscDSAddBoundary(ds, DM_BC_NATURAL_RIEMANN, "boundary", label, 1, &boundaryid, 0, 0, NULL, (void (*)(void))BoundaryOutflow, NULL, phys, NULL));
   PetscCall(DMViewFromOptions(dm, NULL, "-after_ds"));
-  PetscDSViewFromOptions(ds, NULL, "-ds_view");
   //PetscCall(DMLabelView(label, PETSC_VIEWER_STDOUT_WORLD));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
@@ -287,25 +324,26 @@ PetscErrorCode zero_vector(PetscInt dim, PetscReal time, const PetscReal x[], Pe
     u - The output field values
     ctx - optional user-defined function context
    */
+
+
   PetscInt d;
   for (d = 0; d < Nc; ++d) {
     u[d] = 0.0;
   }
   
-  // Define a small area in the center (e.g., radius r = 0.1 around the point (0.5, 0.5))
-  PetscReal radius = 0.1;
-  PetscReal center_x = 0.5;
-  PetscReal center_y = 0.5;
-  PetscReal distance_from_center = PetscSqrtReal((x[0] - center_x)*(x[0] - center_x) + (x[1] - center_y)*(x[1] - center_y));
-
-  // Check if the point is within the small area around the center (0.5, 0.5)
-  if (distance_from_center < radius) {
-    u[0] = 1000.0;  // Set u[0] to 1 in the central region
-    u[1] = 1000.0;  // Set u[0] to 1 in the central region
-    u[2] = 1000.0;  // Set u[0] to 1 in the central region
-    u[3] = 1000.0;  // Set u[0] to 1 in the central region
-    u[4] = 1000.0;  // Set u[0] to 1 in the central region
-  }
+  if (PetscAbsReal(x[0] - 0.759863) < 1e-6 && PetscAbsReal(x[1] - 0.019926) < 1e-6) {
+    PetscPrintf(PETSC_COMM_WORLD, "dim = %d, time= %f, x = (%f, %f), Nc = %d, u = (%f, %f, %f, %f, %f)\n", dim, time,  x[0], x[1], Nc, u[0], u[1], u[2], u[3], u[4]);
+    u[0] = 1000.0;  // Set a non-zero value for u[0] at the specific point
+  } else {
+    u[0] = 0.0;
+  } 
+  
+  
+   //u[0] = 0.0;  // Set u[0] to 1 in the central region
+   //u[1] = 0.0;  // Set u[0] to 1 in the central region
+   //u[2] = 0.0;  // Set u[0] to 1 in the central region
+   //u[3] = 0.0;  // Set u[0] to 1 in the central region
+   //u[4] = 0.0;  // Set u[0] to 1 in the central region
   
   return 0;
 }
@@ -334,13 +372,14 @@ static PetscErrorCode OutputVTK(DM dm, const char *filename, PetscViewer *viewer
 static PetscErrorCode MonitorVTK(TS ts, PetscInt stepnum, PetscReal time, Vec X, void *ctx)
 {
   User        user = (User)ctx;
-  DM          dm, plex;
+  DM          dm;
   PetscViewer viewer;
   char        filename[PETSC_MAX_PATH_LEN];
   PetscReal   xnorm;
   PetscBool   rollback;
 
   PetscFunctionBeginUser;
+
   // Check for rollback
   PetscCall(TSGetStepRollBack(ts, &rollback));
   if (rollback)
@@ -348,52 +387,13 @@ static PetscErrorCode MonitorVTK(TS ts, PetscInt stepnum, PetscReal time, Vec X,
 
   // Get the current solution
   PetscCall(PetscObjectSetName((PetscObject)X, "u"));
-  // Get the DM associated with the solution vector X
   PetscCall(VecGetDM(X, &dm));
+
   // Find the norm of the solution vector for summary printing
   PetscCall(VecNorm(X, NORM_INFINITY, &xnorm));
 
   // Adjust step iteration number by user offset
   if (stepnum >= 0) stepnum += user->monitorStepOffset;
-
-  // Process and print results (omit if stepnum = -1, i.e., final time)
-  if (stepnum >= 0) {
-    Vec                cellgeom;
-    PetscInt           c, cStart, cEnd;
-    const PetscScalar *cgeom, *x;
-    DM                 dmCell;
-
-    // Ensure the DM is DMPlex
-    PetscCall(DMConvert(dm, DMPLEX, &plex));
-    // Get the FV mesh geometry (optional, depending on your needs)
-    PetscCall(DMPlexGetGeometryFVM(plex, NULL, &cellgeom, NULL));
-
-    // Get the DM associated with the FV cell geometry (optional)
-    PetscCall(VecGetDM(cellgeom, &dmCell));
-    // Get the range of cells in the mesh
-    PetscCall(DMPlexGetSimplexOrBoxCells(dmCell, 0, &cStart, &cEnd));
-
-    // Read the arrays (geometry of cells and solution)
-    PetscCall(VecGetArrayRead(cellgeom, &cgeom));  // optional
-    PetscCall(VecGetArrayRead(X, &x));
-
-    // Loop over all cells and directly output field values to VTK
-    for (c = cStart; c < cEnd; ++c) {
-      const PetscScalar *cx = NULL;
-
-      // Read the solution at the current cell
-      PetscCall(DMPlexPointGlobalRead(dm, c, x, &cx));
-
-      if (!cx) continue;  // Skip ghost or non-global cells
-
-      // TODO: process cx directly and output its components at the cell
-    }
-
-    // Restore the arrays
-    PetscCall(VecRestoreArrayRead(cellgeom, &cgeom));  // optional
-    PetscCall(VecRestoreArrayRead(X, &x));
-    PetscCall(DMDestroy(&plex));
-  }
 
   // Output to VTK at regular intervals or at the final time
   if (user->vtkInterval < 1) PetscFunctionReturn(PETSC_SUCCESS);
@@ -401,14 +401,21 @@ static PetscErrorCode MonitorVTK(TS ts, PetscInt stepnum, PetscReal time, Vec X,
     if (stepnum == -1) {
       PetscCall(TSGetStepNumber(ts, &stepnum));  // Adjust for final time
     }
+
+    // Generate the VTK filename and open the VTK viewer
     PetscCall(PetscSNPrintf(filename, sizeof(filename), "%s-%03" PetscInt_FMT ".vtu", user->outputBasename, stepnum));
     PetscCall(OutputVTK(dm, filename, &viewer));
+
+    // Write the solution vector to VTK using VecView
     PetscCall(VecView(X, viewer));
+
+    // Clean up
     PetscCall(PetscViewerDestroy(&viewer));
   }
 
   PetscFunctionReturn(PETSC_SUCCESS);
 }
+
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
    Initialize Time stepping (TS) object
    - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
@@ -505,7 +512,7 @@ int main(int argc, char **argv) {
   PetscCall(DMViewFromOptions(dm, NULL, "-orig_dm_view"));
   PetscCall(DMGetDimension(dm, &dim));
   // create label for boundary conditions
-  PetscCall(DMCreateLabel(dm, "Face Sets"));
+  //PetscCall(DMCreateLabel(dm, "Face Sets"));
 
   {
     DM gdm;
@@ -521,7 +528,7 @@ int main(int argc, char **argv) {
   PetscCall(PetscFVSetFromOptions(fv));
   PetscCall(PetscFVSetNumComponents(fv, numComponents));
   PetscCall(PetscFVSetSpatialDimension(fv, dim));
-  PetscCall(PetscObjectSetName((PetscObject)fv, ""));
+  PetscCall(PetscObjectSetName((PetscObject)fv, "finite_volume"));
   
   // Define component names for pressure and velocity
   {
