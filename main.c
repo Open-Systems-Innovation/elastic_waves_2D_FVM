@@ -218,78 +218,22 @@ struct _n_User {
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
    Boundary Conditions
    - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
-//PetscErrorCode ZeroBoundaryCondition(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt Nc, PetscScalar *bcval, void *ctx)
-//{
-//  /* dim - the spatial dimension
-//     time - current time
-//     x[] - coordinates of the current point
-//     Nc - number of constant parameters 
-//     u[] - each field evaluated at the current point
-//     ctx - extra user context
-//   */
-//
-//  PetscFunctionBeginUser;
-//  PetscPrintf(PETSC_COMM_WORLD, "dim = %d, Nc = %d, time = %f, x = (%f, %f), bcval=(%f,%f)\n", dim, Nc, time, x[0], x[1], bcval[0], bcval[1]);
-//  bcval[0] = 0.0;
-//  bcval[1] = 0.0;
-//  bcval[2] = 0.0;
-//  bcval[3] = 0.0;
-//  bcval[4] = 0.0;
-//
-// PetscFunctionReturn(PETSC_SUCCESS);
-//}
-
-//static PetscErrorCode ZeroBoundaryCondition(PetscReal time, const PetscReal *c, const PetscReal *n, const PetscScalar *xI, PetscScalar *xG, void *ctx)
-
-//static PetscErrorCode ZeroBoundaryCondition(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt Nf, PetscScalar *u, void *ctx)
-//{
-//
-//  //PetscPrintf(PETSC_COMM_WORLD, "dim = %d, time= %f, x = (%f, %f), Nf = %d,  u = (%f, %f, %f, %f, %f)\n", dim, time, x[0], x[1], Nf, u[0], u[1], u[2], u[3], u[4]);
-//  PetscFunctionBeginUser;
-//  u[0] = 0.0;
-//  u[1] = 0.0;
-//  u[2] = 0.0;
-//  u[3] = 0.0;
-//  u[4] = 0.0;
-//
-//  PetscFunctionReturn(PETSC_SUCCESS);
-//}
-static PetscErrorCode ZeroBoundaryCondition(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt Nf, PetscScalar *u, void *ctx)
-{
-  PetscFunctionBeginUser;
-
-  PetscPrintf(PETSC_COMM_WORLD, "dim = %d, time= %f, x = (%f, %f), Nf = %d, u = (%f, %f, %f, %f, %f)\n", dim, time,  x[0], x[1], Nf, u[0], u[1], u[2], u[3], u[4]);
-  // Check if it's time 0 and if the current point is the target point (e.g., x[0] == 0.5 and x[1] == 0.5)
-  if (time == 0.0 && PetscAbsReal(x[0] - 0.5) < 1e-6 && PetscAbsReal(x[1] - 0.5) < 1e-6) {
-    u[0] = 1.0;  // Set a non-zero value for u[0] at the specific point
-  } else {
-    u[0] = 0.0;
-  }
-  u[1] = 0.0;
-  u[2] = 0.0;
-  u[3] = 0.0;
-  u[4] = 0.0;
-
-  PetscFunctionReturn(PETSC_SUCCESS);
-}
-
 static PetscErrorCode BoundaryOutflow(PetscReal time, const PetscReal *c, const PetscReal *n, const PetscScalar *xI, PetscScalar *xG, void *ctx)
 {
   
   PetscFunctionBeginUser;
-  PetscPrintf(PETSC_COMM_WORLD, "time= %f, c = (%f, %f), n = (%f, %f), xI = (%f, %f, %f, %f, %f),  xG = (%f, %f)\n", time, c[0], c[1], n[0], n[1], xI[0], xI[1], xI[2], xI[3], xI[4], xG[0], xG[1]);
-  xG[0] = xI[0];
-  xG[1] = xI[1];
-  xG[2] = xI[2];
-  xG[3] = xI[3];
-  xG[4] = xI[4];
+  //PetscPrintf(PETSC_COMM_WORLD, "time= %f, c = (%f, %f), n = (%f, %f), xI = (%f, %f, %f, %f, %f),  xG = (%f, %f)\n", time, c[0], c[1], n[0], n[1], xI[0], xI[1], xI[2], xI[3], xI[4], xG[0], xG[1]);
+  xG[0] = 0.0;//xI[0];
+  xG[1] = 0.0;//xI[1];
+  xG[2] = 0.0;//xI[2];
+  xG[3] = 0.0;//xI[3];
+  xG[4] = 0.0;//xI[4];
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
 static PetscErrorCode SetUpBC(DM dm, PetscDS ds, Physics phys)
 {
   DMLabel        label;
-  PetscInt       field = 0;   // we're working with a single field
   PetscInt       boundaryid = 1;  // Physical group label for "boundary"
   
   PetscFunctionBeginUser;
@@ -303,7 +247,7 @@ static PetscErrorCode SetUpBC(DM dm, PetscDS ds, Physics phys)
       PetscFunctionReturn(PETSC_ERR_ARG_WRONG);
   }
 
-  PetscCall(DMGetLabel(dm, "boundary", &label));
+  //PetscCall(DMGetLabel(dm, "boundary", &label));
   PetscCall(PetscDSViewFromOptions(ds, NULL, "-ds_view"));
   PetscCall(PetscDSAddBoundary(ds, DM_BC_NATURAL_RIEMANN, "boundary", label, 1, &boundaryid, 0, 0, NULL, (void (*)(void))BoundaryOutflow, NULL, phys, NULL));
   PetscCall(DMViewFromOptions(dm, NULL, "-after_ds"));
@@ -331,20 +275,13 @@ PetscErrorCode zero_vector(PetscInt dim, PetscReal time, const PetscReal x[], Pe
     u[d] = 0.0;
   }
   
-  if (PetscAbsReal(x[0] - 0.759863) < 1e-6 && PetscAbsReal(x[1] - 0.019926) < 1e-6) {
+  if (PetscAbsReal(x[0] - 0.759863) < 1e-2 && PetscAbsReal(x[1] - 0.019926) < 1e-2) {
     PetscPrintf(PETSC_COMM_WORLD, "dim = %d, time= %f, x = (%f, %f), Nc = %d, u = (%f, %f, %f, %f, %f)\n", dim, time,  x[0], x[1], Nc, u[0], u[1], u[2], u[3], u[4]);
-    u[0] = 1000.0;  // Set a non-zero value for u[0] at the specific point
+    u[0] = 10.0;  // Set a non-zero value for u[0] at the specific point
   } else {
     u[0] = 0.0;
   } 
-  
-  
-   //u[0] = 0.0;  // Set u[0] to 1 in the central region
-   //u[1] = 0.0;  // Set u[0] to 1 in the central region
-   //u[2] = 0.0;  // Set u[0] to 1 in the central region
-   //u[3] = 0.0;  // Set u[0] to 1 in the central region
-   //u[4] = 0.0;  // Set u[0] to 1 in the central region
-  
+ 
   return 0;
 }
 
@@ -426,7 +363,6 @@ static PetscErrorCode InitializeTS(DM dm, User user, TS *ts)
   PetscCall(TSSetType(*ts, TSSSP)); // use Runge-Kutta, -ts_ssp_type {rks2,rks3,rk104}
   PetscCall(TSSetDM(*ts, dm));
   if (user->vtkmon) PetscCall(TSMonitorSet(*ts, MonitorVTK, user, NULL));
-  //PetscCall(TSMonitorSet(*ts, MonitorVTK, user, NULL));
   PetscCall(DMTSSetBoundaryLocal(dm, DMPlexTSComputeBoundary, user));
   PetscCall(DMTSSetRHSFunctionLocal(dm, DMPlexTSComputeRHSFunctionFVM, user));
   PetscCall(TSSetMaxTime(*ts, 2.0));
@@ -471,7 +407,7 @@ int main(int argc, char **argv) {
   Model             mod;
   Physics           phys;
   DM                dm;
-  PetscReal         ftime, cfl, dt, minRadius;
+  PetscReal         ftime, cfl, dt, minRadius, maxspeed;
   PetscInt          nsteps;
   PetscInt          dim = 2;
   PetscInt          numComponents = 5;
@@ -570,8 +506,12 @@ int main(int argc, char **argv) {
   PetscCall(DMDestroy(&dm));
   //PetscCall(MPIU_Allreduce(&phys->maxspeed, &mod->maxspeed, 1, MPIU_REAL, MPIU_MAX, PetscObjectComm((PetscObject)ts)));
   
-  //dt = cfl * minRadius / mod->maxspeed;
-  dt = 0.01;
+  cfl = 0.9 * 4; /* default SSPRKS2 with s=5 stages is stable for CFL number s-1 */
+  minRadius = 0.01;
+  maxspeed = 3;
+  //dt = 0.01;
+  dt = cfl * minRadius / maxspeed;
+  PetscPrintf(comm, "dt = %f", dt);
   PetscCall(TSSetTimeStep(ts, dt));
   PetscCall(TSSetFromOptions(ts));
 
