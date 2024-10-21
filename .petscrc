@@ -70,13 +70,15 @@
 # -blas_num_threads # <now 1 : formerly 1>: Number of threads to use for BLAS operations (None)
 # ----------------------------------------
 # My Project's Options:
--infile mesh.msh # <now  : formerly >: The input mesh file ()
+-infile rectangle_with_circle.msh # <now  : formerly >: The input mesh file ()
 # -outfile # <now  : formerly >: The output mesh file ()
 #-fv_view
 #-ts_view
-#-dm_view
-#-ds_view
+-dm_view
+-ds_view
 #-X_view#
 #-dm_view :mesh.tex:ascii_latex
 -dm_plex_gmsh_use_regions
 #-orig_dm_view
+-petsclimiter_type minmod
+-petscfv_type leastsquares 

@@ -28,7 +28,7 @@
               (pkgs.python3.withPackages (python-pkgs: [
               #  # packages for formatting/ IDE
               #  python-pkgs.pip
-              #  python-pkgs.python-lsp-server
+                python-pkgs.python-lsp-server
               #  # packages for code
                 python-pkgs.gmsh
               #  python-pkgs.matplotlib

@@ -1,36 +1,34 @@
 import gmsh
-import sys
 
+geometry_file = "./freecad-sketch.brep"
+dimension = 2
+
+# Initialize gmsh
 gmsh.initialize()
+gmsh.model.add("rectangle_with_circle")
 
-gmsh.model.add("rectangular_mesh_with_tags")
-lc = 0.02
-gmsh.model.geo.addPoint(0, 0, 0, lc, 1)
-gmsh.model.geo.addPoint(1, 0, 0, lc, 2)
-gmsh.model.geo.addPoint(1, 1, 0, lc, 3)
-gmsh.model.geo.addPoint(0, 1, 0, lc, 4)
+# load the BREP file
+# brep files don't contain info about units, so scaling has to be applied
+gmsh.option.setNumber("Geometry.OCCScaling", 1)
 
-gmsh.model.geo.addLine(1, 2, 1)
-gmsh.model.geo.addLine(3, 2, 2)
-gmsh.model.geo.addLine(3, 4, 3)
-gmsh.model.geo.addLine(4, 1, 4)
+volumes = gmsh.model.occ.importShapes(geometry_file)
 
-gmsh.model.geo.addCurveLoop([4, 1, -2, 3], 1)
+# run this code after every change in the mesh to see what changed
+gmsh.model.occ.synchronize()
 
-gmsh.model.geo.addPlaneSurface([1], 1)
+# Physical Surfaces, "Boundaries" in pyGIMLi,
+# pgrp tag = 1 --> Free Surface | pgrp tag > 1 --> Mixed BC
+gmsh.model.addPhysicalGroup(2, [1], 1, name="transmitter")
+gmsh.model.addPhysicalGroup(2, [2], 2, name="blob")
+gmsh.model.addPhysicalGroup(2, [3], 3, name="silicone")
+gmsh.model.addPhysicalGroup(1, [1,9,8,7,6,10], 4, name="boundary")
 
-gmsh.model.geo.synchronize()
+# Generate the mesh and write the mesh file
+gmsh.model.occ.synchronize()
+gmsh.model.mesh.generate(dimension)
+gmsh.write("rectangle_with_circle.msh")
 
-gmsh.model.addPhysicalGroup(1, [1, 2, 3, 4], 1, name="boundary")
-gmsh.model.addPhysicalGroup(2, [1], 2, name="surface")
+gmsh.fltk.run()
 
-# We can then generate a 2D mesh...
-gmsh.model.mesh.generate(2)
-
-# ... and save it to disk
-gmsh.write("mesh.msh")
-
-if '-nopopup' not in sys.argv:
-    gmsh.fltk.run()
-
+# Finalize Gmsh
 gmsh.finalize()
