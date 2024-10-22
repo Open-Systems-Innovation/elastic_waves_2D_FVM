@@ -113,7 +113,13 @@ static void Elastic_Riemann_Godunov(
   PetscReal lambdaR = uR[5];
   PetscReal muR = uR[6];
   PetscReal densityR = uR[7];
-  
+  //PetscPrintf(PETSC_COMM_WORLD, "Right lambda: %f\n", lambdaR);
+  //PetscPrintf(PETSC_COMM_WORLD, "Right mu: %f\n", muR);
+  //PetscPrintf(PETSC_COMM_WORLD, "Right density: %f\n", densityR);
+  //PetscPrintf(PETSC_COMM_WORLD, "Left lambda: %f\n", lambdaL);
+  //PetscPrintf(PETSC_COMM_WORLD, "Left mu: %f\n", muL);
+  //PetscPrintf(PETSC_COMM_WORLD, "Left density: %f\n", densityL);
+
   // Calculate cp (P-wave speed) and cs (S-wave speed)
   PetscReal bulkL = lambdaL + 2.0 * muL;
   PetscReal bulkR = lambdaR + 2.0 * muR;
@@ -122,10 +128,10 @@ static void Elastic_Riemann_Godunov(
   PetscReal cpR = PetscSqrtReal(bulkR / densityR);
   PetscReal csR = PetscSqrtReal(muR / densityR);
 
-  //PetscPrintf(PETSC_COMM_WORLD, "Right P-wave speed (cp): %f\n", cpR);
-  //PetscPrintf(PETSC_COMM_WORLD, "Right S-wave speed (cs): %f\n", csR);
-  //PetscPrintf(PETSC_COMM_WORLD, "Left P-wave speed (cp): %f\n", cpL);
-  //PetscPrintf(PETSC_COMM_WORLD, "Left S-wave speed (cs): %f\n", csL);
+//  PetscPrintf(PETSC_COMM_WORLD, "Right P-wave speed (cp): %f\n", cpR);
+//  PetscPrintf(PETSC_COMM_WORLD, "Right S-wave speed (cs): %f\n", csR);
+//  PetscPrintf(PETSC_COMM_WORLD, "Left P-wave speed (cp): %f\n", cpL);
+//  PetscPrintf(PETSC_COMM_WORLD, "Left S-wave speed (cs): %f\n", csL);
 
   // Calculate useful multiples of the norm vector components
   PetscReal nx = n[0];
@@ -229,19 +235,22 @@ struct _n_User {
 static PetscErrorCode BoundaryOutflow(PetscReal time, const PetscReal *c, const PetscReal *n, const PetscScalar *xI, PetscScalar *xG, void *ctx)
 {
   PetscFunctionBeginUser;
-  //PetscPrintf(PETSC_COMM_WORLD, "time= %f, c = (%f, %f), n = (%f, %f), xI = (%f, %f, %f, %f, %f),  xG = (%f, %f)\n", time, c[0], c[1], n[0], n[1], xI[0], xI[1], xI[2], xI[3], xI[4], xG[0], xG[1]);
+  PetscPrintf(PETSC_COMM_WORLD, "time= %f, c = (%f, %f), n = (%f, %f), xI = (%f, %f, %f, %f, %f),  xG = (%f, %f)\n", time, c[0], c[1], n[0], n[1], xI[0], xI[1], xI[2], xI[3], xI[4], xG[0], xG[1]);
   xG[0] = xI[0];
   xG[1] = xI[1];
   xG[2] = xI[2];
   xG[3] = xI[3];
   xG[4] = xI[4];
+  xG[5] = xI[5];
+  xG[6] = xI[6];
+  xG[7] = xI[7];
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
 static PetscErrorCode SetUpBC(DM dm, PetscDS ds, Physics phys)
 {
   DMLabel        label;
-  PetscInt       boundaryid=1;  // Physical group label for "boundary"
+  PetscInt       boundaryid=4;  // Physical group label for "boundary"
   
   PetscFunctionBeginUser;
   
@@ -323,18 +332,22 @@ PetscErrorCode SetUpMaterialProperties(DM dm, Vec X)
   // transmitter material
   materialid = 1;
   func[0] = transmitterMaterial;
-  PetscCall(DMGetLabel(dm, "tramsmitter", &label));
-  PetscCall(DMProjectFunctionLabel(dm, 0.0, label, 1, &materialid, Nc, NULL, func, NULL, INSERT_ALL_VALUES, X));
+  PetscCall(DMGetLabel(dm, "transmitter", &label));
+  PetscCall(DMProjectFunctionLabel(dm, 0.0, label, 1, &materialid, 0, NULL, func, NULL, ADD_VALUES, X));
+
   // blob material
   materialid = 2;
   func[0] = blobMaterial;
   PetscCall(DMGetLabel(dm, "blob", &label));
-  PetscCall(DMProjectFunctionLabel(dm, 0.0, label, 1, &materialid, Nc, NULL, func, NULL, INSERT_ALL_VALUES, X));
+  PetscCall(DMProjectFunctionLabel(dm, 0.0, label, 1, &materialid, 0, NULL, func, NULL, ADD_VALUES, X));
+
   // silicone material
   materialid = 3;
   func[0] = siliconeMaterial;
   PetscCall(DMGetLabel(dm, "silicone", &label));
-  PetscCall(DMProjectFunctionLabel(dm, 0.0, label, 1, &materialid, Nc, NULL, func, NULL, INSERT_ALL_VALUES, X));
+  PetscCall(DMProjectFunctionLabel(dm, 0.0, label, 1, &materialid, 0, NULL, func, NULL, ADD_VALUES, X));
+
+  PetscCall(VecViewFromOptions(X, NULL, "-X_view"));
 
   PetscFunctionReturn(PETSC_SUCCESS);
 }
@@ -515,16 +528,15 @@ int main(int argc, char **argv) {
   PetscCall(DMSetFromOptions(dm));
   PetscCall(DMViewFromOptions(dm, NULL, "-orig_dm_view"));
   PetscCall(DMGetDimension(dm, &dim));
-  // create label for boundary conditions
-  //PetscCall(DMCreateLabel(dm, "Face Sets"));
-
   {
     DM gdm;
+    PetscInt numGhost;
+    PetscCall(DMPlexConstructGhostCells(dm, NULL, &numGhost, &gdm));
 
-    PetscCall(DMPlexConstructGhostCells(dm, NULL, NULL, &gdm));
+    PetscPrintf(comm, "number of ghost points  = %d", numGhost);
     PetscCall(DMDestroy(&dm));
     dm = gdm;
-    PetscCall(DMViewFromOptions(dm, NULL, "-dm_view"));
+    PetscCall(DMViewFromOptions(gdm, NULL, "-dm_view"));
   }
 
   // Create finite volume
@@ -572,6 +584,7 @@ int main(int argc, char **argv) {
   PetscCall(PetscObjectSetName((PetscObject)X, "solution"));
   //PetscCall(SetInitialConditions(dm, X, user));
   PetscCall(SetUpMaterialProperties(dm, X));
+
   
   PetscCall(DMPlexGetGeometryFVM(dm, NULL, NULL, &minRadius));
   PetscCall(DMViewFromOptions(dm, NULL, "-dm_view"));
@@ -580,7 +593,7 @@ int main(int argc, char **argv) {
   //PetscCall(MPIU_Allreduce(&phys->maxspeed, &mod->maxspeed, 1, MPIU_REAL, MPIU_MAX, PetscObjectComm((PetscObject)ts)));
   
   cfl = 0.9 * 4; /* default SSPRKS2 with s=5 stages is stable for CFL number s-1 */
-  maxspeed = 100;
+  maxspeed = 300;
   //dt = 0.01;
   dt = cfl * minRadius / maxspeed;
   PetscPrintf(comm, "dt = %f", dt);
@@ -589,7 +602,7 @@ int main(int argc, char **argv) {
 
 
   PetscCall(TSSetSolution(ts, X));
-  PetscCall(VecViewFromOptions(X, NULL, "-X_view"));
+  //PetscCall(VecViewFromOptions(X, NULL, "-X_view"));
   PetscCall(VecDestroy(&X));
   PetscCall(TSViewFromOptions(ts, NULL, "-ts_view"));
   PetscCall(PetscDSViewFromOptions(ds, NULL, "-ds_view"));
